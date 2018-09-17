@@ -1,22 +1,26 @@
-#ifndef __INTFMGR__
-#define __INTFMGR__
+#pragma once
 
 #include "dbconnector.h"
-#include "producerstatetable.h"
+#include "netmsg.h"
 #include "orch.h"
+#include "producerstatetable.h"
 
 #include <map>
+#include <set>
 #include <string>
 
 namespace swss {
 
-class PortMgr : public Orch
+class PortMgr : public Orch, public NetMsg
 {
 public:
     PortMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, const vector<string> &tableNames);
-    using Orch::doTask;
 
+    virtual void onMsg(int nlmsg_tryp, struct nl_object *obj);
+    using Orch::doTask;
 private:
+    set<string> m_portList;
+
     Table m_cfgPortTable;
     Table m_cfgLagTable;
     Table m_statePortTable;
@@ -31,5 +35,3 @@ private:
 };
 
 }
-
-#endif

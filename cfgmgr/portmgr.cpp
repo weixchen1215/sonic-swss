@@ -1,4 +1,4 @@
-#include <string>
+#include <netlink/route/link.h>
 
 #include "logger.h"
 #include "dbconnector.h"
@@ -21,6 +21,62 @@ PortMgr::PortMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, c
         m_appPortTable(appDb, APP_PORT_TABLE_NAME),
         m_appLagTable(appDb, APP_LAG_TABLE_NAME)
 {
+}
+
+void PortMgr::onMsg(int nlmsg_type, struct nl_object *obj)
+{
+    SWSS_LOG_NOTICE("i'm here!!!! portmgr!!!");
+        struct rtnl_link *link = (struct rtnl_link *)obj;
+        string alias = rtnl_link_get_name(link);
+
+
+    if (nlmsg_type == RTM_NEWLINK)
+    {
+        if (m_portList.find(alias) != m_portList.end())
+        {
+            return;
+        }
+
+        if (alias.find("PortChannel") == 0)
+        {
+            SWSS_LOG_NOTICE("get port channel %s", alias.c_str());
+
+// no need to check state database because the port channel is already created!
+
+            vector<FieldValueTuple> fvs;
+            if (m_cfgLagTable.get(alias, fvs))
+            {
+                for (auto i : fvs)
+                {
+                    if (fvField(i) == "mtu")
+                    {
+                        auto mtu = fvValue(i);
+                    }
+                    else if (fvField(i) == "admin_status")
+                    {
+                        auto status = fvValue(i);
+                        setPortAdminStatus(alias, status == "up");
+                        SWSS_LOG_NOTICE("Configure %s %s",
+                                alias.c_str(), status.c_str());
+                    }
+                }
+            }
+
+            m_portList.insert(alias);
+        }
+
+
+    }
+    else
+    {
+        if (m_portList.find(alias) != m_portList.end())
+        {
+            SWSS_LOG_NOTICE("remove %s from port list", alias.c_str());
+            m_portList.erase(alias);
+        }
+    }
+
+
 }
 
 bool PortMgr::setPortMtu(const string &table, const string &alias, const string &mtu)
@@ -145,6 +201,7 @@ void PortMgr::doTask(Consumer &consumer)
                             alias.c_str(), status.c_str());
                 }
             }
+            m_portList.insert(alias);
         }
 
         it = consumer.m_toSync.erase(it);
