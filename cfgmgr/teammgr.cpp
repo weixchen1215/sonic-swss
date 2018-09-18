@@ -1,5 +1,3 @@
-#include <netlink/route/link.h>
-
 #include "exec.h"
 #include "teammgr.h"
 #include "logger.h"
@@ -7,71 +5,27 @@
 #include "tokenize.h"
 
 #include <sstream>
+#include <thread>
 
 using namespace std;
 using namespace swss;
 
-LagMgr::LagMgr(DBConnector *cfgDb, DBConnector *stateDb, const vector<TableConnector> &tables) :
+LagMgr::LagMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *staDb, const vector<TableConnector> &tables) :
     Orch(tables),
+    m_cfgPortTable(cfgDb, CFG_PORT_TABLE_NAME),
     m_cfgLagTable(cfgDb, CFG_LAG_TABLE_NAME),
     m_cfgLagMemberTable(cfgDb, CFG_LAG_MEMBER_TABLE_NAME),
-    m_statePortTable(stateDb, STATE_PORT_TABLE_NAME),
-    m_stateLagTable(stateDb, STATE_LAG_TABLE_NAME)
+    m_appPortTable(appDb, APP_PORT_TABLE_NAME),
+    m_statePortTable(staDb, STATE_PORT_TABLE_NAME),
+    m_stateLagTable(staDb, STATE_LAG_TABLE_NAME)
 {
     // Remove all state database LAG entries
     vector<string> keys;
     m_stateLagTable.getKeys(keys);
 
-    for (string alias : keys)
+    for (auto alias : keys)
     {
         m_stateLagTable.del(alias);
-    }
-}
-
-void LagMgr::onMsg(int nlmsg_type, struct nl_object *obj)
-{
-
-     struct rtnl_link *link = (struct rtnl_link *)obj;
-    string alias = rtnl_link_get_name(link);
-    if (nlmsg_type == RTM_NEWLINK)
-    {
-        if (m_portList.find(alias) != m_portList.end())
-        {
-            return;
-        }
-
-        if (alias.find("Ethernet") == 0)
-        {
-            SWSS_LOG_NOTICE("get prot %s", alias.c_str());
-
-            vector<string> keys;
-            m_cfgLagMemberTable.getKeys(keys);
-
-            for (auto key : keys)
-            {
-                auto tokens = tokenize(key, '|');
-
-                auto lag = tokens[0];
-                auto member = tokens[1];
-
-                if (alias == member)
-                {
-                    // port must already be state ok
-                    // lag must already be state ok
-                    addLagMember(lag, alias);
-                    m_portList.insert(alias);
-                    return;
-                }
-            }
-        }
-    }
-    else
-    {
-        if (m_portList.find(alias) != m_portList.end())
-        {
-            SWSS_LOG_NOTICE("Remove %s from post list", alias.c_str());
-            m_portList.erase(alias);
-        }
     }
 }
 
@@ -83,7 +37,7 @@ bool LagMgr::isPortStateOk(const string &alias)
 
     if (!m_statePortTable.get(alias, temp))
     {
-        SWSS_LOG_NOTICE("Lag %s is not ready", alias.c_str());
+        SWSS_LOG_INFO("Port %s is not ready", alias.c_str());
         return false;
     }
 
@@ -98,7 +52,7 @@ bool LagMgr::isLagStateOk(const string &alias)
 
     if (!m_stateLagTable.get(alias, temp))
     {
-        SWSS_LOG_NOTICE("Lag %s is not ready", alias.c_str());
+        SWSS_LOG_INFO("Lag %s is not ready", alias.c_str());
         return false;
     }
 
@@ -111,6 +65,22 @@ void LagMgr::doTask(Consumer &consumer)
 
     auto table = consumer.getTableName();
 
+    if (table == CFG_LAG_TABLE_NAME)
+    {
+        doLagTask(consumer);
+    }
+    else if (table == CFG_LAG_MEMBER_TABLE_NAME)
+    {
+        doLagMemberTask(consumer);
+    }
+    else if (table == STATE_PORT_TABLE_NAME)
+    {
+        doPortUpdateTask(consumer);
+    }
+}
+
+void LagMgr::doLagTask(Consumer &consumer)
+{
     auto it = consumer.m_toSync.begin();
     while (it != consumer.m_toSync.end())
     {
@@ -123,61 +93,122 @@ void LagMgr::doTask(Consumer &consumer)
 
         if (op == SET_COMMAND)
         {
-            if (table == CFG_LAG_TABLE_NAME)
-            {
                 int min_links = 0;
-                bool fall_back = false;
+                bool fallback = false;
+                bool admin_status = false;
 
                 for (auto i : kfvFieldsValues(t))
                 {
-                    // min_links and fall_back attributes cannot be changed
+                    // min_links and fallback attributes cannot be changed
                     // after the LAG is created.
                     if (fvField(i) == "min_links")
                     {
                         min_links = stoi(fvValue(i));
+                        SWSS_LOG_NOTICE("get min_links value is %d", min_links);
                     }
-                    else if (fvField(i) == "fall_back")
+                    else if (fvField(i) == "fallback")
                     {
-                        fall_back = fvValue(i) == "true";
+                        fallback = fvValue(i) == "true";
+                    }
+                    else if (fvField(i) == "admin_status")
+                    {
+                        admin_status = fvValue(i) == "up";
+                    }
+                    else if (fvField(i) == "admin_status")
+                    {
+//                        mtu = stoi(fvValue(i));
                     }
                 }
 
-                addLag(alias, min_links, fall_back);
-            }
-            else if (table == CFG_LAG_MEMBER_TABLE_NAME)
-            {
-                SWSS_LOG_NOTICE("key: %s", alias.c_str());
-                auto tokens = tokenize(alias, '|');
+                addLag(alias, min_links, fallback);
+                setLagAdminStatus(alias, admin_status);
 
-                auto lag = tokens[0];
-                auto member = tokens[1];
-
-                if (!isLagStateOk(lag))
-                {
-                    it++;
-                    continue;
-                }
-
-                addLagMember(lag, member);
-                m_portList.insert(member);
-            }
         }
         else if (op == DEL_COMMAND)
         {
-            if (table == CFG_LAG_TABLE_NAME)
-            {
                 removeLag(alias);
-            }
-            else if (table == CFG_LAG_MEMBER_TABLE_NAME)
+        }
+
+        it = consumer.m_toSync.erase(it);
+    }
+}
+
+void LagMgr::doLagMemberTask(Consumer &consumer)
+{
+    auto it = consumer.m_toSync.begin();
+    while (it != consumer.m_toSync.end())
+    {
+        KeyOpFieldsValuesTuple t = it->second;
+
+        auto tokens = tokenize(kfvKey(t), '|');
+        auto lag = tokens[0];
+        auto member = tokens[1];
+
+        auto op = kfvOp(t);
+
+        if (op == SET_COMMAND)
+        {
+            if (!isPortStateOk(member) || !isLagStateOk(lag))
             {
-                SWSS_LOG_NOTICE("key: %s", alias.c_str());
-                auto tokens = tokenize(alias, '|');
+                it++;
+                continue;
+            }
 
-                auto lag = tokens[0];
-                auto member = tokens[1];
+            addLagMember(lag, member);
+            m_portList.insert(member);
+        }
+        else if (op == DEL_COMMAND)
+        {
+            removeLagMember(lag, member);
+            m_portList.erase(member);
+        }
 
-                removeLagMember(lag, member);
-                m_portList.erase(member);
+        it = consumer.m_toSync.erase(it);
+    }
+}
+
+void LagMgr::doPortUpdateTask(Consumer &consumer)
+{
+    auto it = consumer.m_toSync.begin();
+    while (it != consumer.m_toSync.end())
+    {
+        KeyOpFieldsValuesTuple t = it->second;
+
+        auto alias = kfvKey(t);
+        auto op = kfvOp(t);
+
+        if (op == SET_COMMAND)
+        {
+            if (m_portList.find(alias) == m_portList.end())
+            {
+                vector<string> keys;
+                m_cfgLagMemberTable.getKeys(keys);
+
+                for (auto key : keys)
+                {
+
+                    auto tokens = tokenize(key, '|');
+
+                    auto lag = tokens[0];
+                    auto member = tokens[1];
+
+                    if (alias == member)
+                    {
+                        // port must already be state ok
+                        // lag must already be state ok
+                        addLagMember(lag, alias);
+                        m_portList.insert(alias);
+                    }
+                }
+            }
+
+        }
+        else if (op == DEL_COMMAND)
+        {
+            if (m_portList.find(alias) != m_portList.end())
+            {
+                SWSS_LOG_NOTICE("Remove %s from post list", alias.c_str());
+                m_portList.erase(alias);
             }
         }
 
@@ -185,7 +216,18 @@ void LagMgr::doTask(Consumer &consumer)
     }
 }
 
-bool LagMgr::addLag(const string &alias, int min_links, bool fall_back)
+bool LagMgr::setLagAdminStatus(const string &alias, const bool up)
+{
+    stringstream cmd;
+    string res;
+
+    cmd << IP_CMD << " link set dev " << alias << (up ? " up" : " down");
+    EXEC_WITH_ERROR_THROW(cmd.str(), res);
+
+    return true;
+}
+
+bool LagMgr::addLag(const string &alias, int min_links, bool fallback)
 {
     stringstream cmd;
     string res;
@@ -225,12 +267,34 @@ bool LagMgr::addLagMember(const string &lag, const string &member)
     string res;
 
     // TODO admin down lag member first
+    cmd << IP_CMD << " link set dev " << member << " down; ";
+    cmd << TEAMDCTL_CMD << " " << lag << " port add " << member << "; ";
 
-    cmd << TEAMDCTL_CMD << " " << lag << " port add " << member;
-    EXEC_WITH_ERROR_THROW(cmd.str(), res);
-
-    SWSS_LOG_NOTICE("add lag member");
     // TODO apply MTU configurations from master etc
+
+    vector<FieldValueTuple> fvs;
+    m_cfgPortTable.get(member, fvs);
+    
+    bool up = false;
+
+    for (auto i : fvs)
+    {
+        if (fvField(i) == "admin_status")
+        {
+            up = fvValue(i) == "up";
+            SWSS_LOG_NOTICE("the status of the admin status is %s", fvValue(i).c_str());
+        }
+    }
+
+        cmd << IP_CMD << " link set dev " << member << (up ? " up" : " down");
+
+    fvs.clear();
+    FieldValueTuple fv("admin_status", (up ? "up" : "down"));
+    fvs.push_back(fv);
+    m_appPortTable.set(member, fvs);
+
+    EXEC_WITH_ERROR_THROW(cmd.str(), res);
+    SWSS_LOG_NOTICE("Add %s to port channel %s", member.c_str(), lag.c_str());
 
     return true;
 }
@@ -245,7 +309,7 @@ bool LagMgr::removeLagMember(const string &lag, const string &member)
 
     // TODO apply port original configurations
 
-    SWSS_LOG_NOTICE("remove lag member");
+    SWSS_LOG_NOTICE("Remove %s from port channel %s", member.c_str(), lag.c_str());
 
     return true;
 }

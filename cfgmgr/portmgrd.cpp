@@ -44,7 +44,6 @@ int main(int argc, char **argv)
     {
         vector<string> cfg_port_tables = {
             CFG_PORT_TABLE_NAME,
-            CFG_LAG_TABLE_NAME,
         };
 
         DBConnector cfgDb(CONFIG_DB, DBConnector::DEFAULT_UNIXSOCKET, 0);
@@ -61,14 +60,6 @@ int main(int argc, char **argv)
         {
             s.addSelectables(o->getSelectables());
         }
-
-        NetLink netlink;
-        netlink.registerGroup(RTNLGRP_LINK);
-
-        NetDispatcher::getInstance().registerMessageHandler(RTM_NEWLINK, &portmgr);
-        NetDispatcher::getInstance().registerMessageHandler(RTM_DELLINK, &portmgr);
-
-        s.addSelectable(&netlink);
 
         while (true)
         {
@@ -87,15 +78,8 @@ int main(int argc, char **argv)
                 continue;
             }
 
-            if (sel != (NetLink *)&netlink)
-            {
                 auto *c = (Executor *)sel;
                 c->execute();
-            }
-            else
-            {
-                SWSS_LOG_NOTICE("yyyyyyyyyyyyyyy");
-            }
         }
     }
     catch (const exception &e)

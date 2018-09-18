@@ -20,6 +20,8 @@ int main(int argc, char **argv)
     NetDispatcher::getInstance().registerMessageHandler(RTM_NEWLINK, &sync);
     NetDispatcher::getInstance().registerMessageHandler(RTM_DELLINK, &sync);
 
+    // Remove all LAG/LAG_MEMBER entries in application database
+
     while (1)
     {
         try

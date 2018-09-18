@@ -86,11 +86,15 @@ private:
     unique_ptr<ProducerTable> m_flexCounterTable;
     unique_ptr<ProducerTable> m_flexCounterGroupTable;
 
+    unique_ptr<Table> m_statePortTable;
+    unique_ptr<Table> m_stateLagTable;
+
     std::string getQueueFlexCounterTableKey(std::string s);
     std::string getPortFlexCounterTableKey(std::string s);
 
     shared_ptr<DBConnector> m_counter_db;
     shared_ptr<DBConnector> m_flex_db;
+    shared_ptr<DBConnector> m_state_db;
 
     std::map<sai_object_id_t, PortSupportedSpeeds> m_portSupportedSpeeds;
 

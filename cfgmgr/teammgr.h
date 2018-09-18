@@ -12,27 +12,35 @@
 
 namespace swss {
 
-class LagMgr : public Orch, public NetMsg
+class LagMgr : public Orch
 {
 public:
-    LagMgr(DBConnector *cfgDb, DBConnector *stateDb, const vector<TableConnector> &tables);
+    LagMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *staDb,
+            const vector<TableConnector> &tables);
 
-    virtual void onMsg(int nlmsg_type, struct nl_object *obj);
     using Orch::doTask;
 private:
+    Table m_cfgPortTable;
     Table m_cfgLagTable;
     Table m_cfgLagMemberTable;
     Table m_statePortTable;
     Table m_stateLagTable;
 
+    ProducerStateTable m_appPortTable;
+
     set<string> m_portList;
 
     void doTask(Consumer &consumer);
+    void doLagTask(Consumer &consumer);
+    void doLagMemberTask(Consumer &consumer);
+    void doPortUpdateTask(Consumer &consumer);
 
     bool addLag(const string &alias, int min_links, bool fall_back);
     bool removeLag(const string &alias);
     bool addLagMember(const string &lag, const string &member);
     bool removeLagMember(const string &lag, const string &member);
+
+    bool setLagAdminStatus(const string &alias, const bool up);
 
     void recover();
     bool isPortStateOk(const string&);

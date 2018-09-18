@@ -46,7 +46,7 @@ void IntfsOrch::increaseRouterIntfsRefCount(const string &alias)
     SWSS_LOG_ENTER();
 
     m_syncdIntfses[alias].ref_count++;
-    SWSS_LOG_DEBUG("Router interface %s ref count is increased to %d",
+    SWSS_LOG_NOTICE("Router interface %s ref count is increased to %d",
                   alias.c_str(), m_syncdIntfses[alias].ref_count);
 }
 
@@ -55,7 +55,7 @@ void IntfsOrch::decreaseRouterIntfsRefCount(const string &alias)
     SWSS_LOG_ENTER();
 
     m_syncdIntfses[alias].ref_count--;
-    SWSS_LOG_DEBUG("Router interface %s ref count is decreased to %d",
+    SWSS_LOG_NOTICE("Router interface %s ref count is decreased to %d",
                   alias.c_str(), m_syncdIntfses[alias].ref_count);
 }
 

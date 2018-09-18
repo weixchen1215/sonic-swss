@@ -18,22 +18,28 @@ string gRecordFile;
 
 int main(int argc, char **argv)
 {
-    Logger::linkToDbNative("lagmgrd");
+    Logger::linkToDbNative("teammgrd");
     SWSS_LOG_ENTER();
 
-    SWSS_LOG_NOTICE("--- Starting lagmrgd ---");
+    SWSS_LOG_NOTICE("--- Starting teammrgd ---");
 
     try
     {
-        vector<string> cfg_port_tables = {
-            CFG_LAG_TABLE_NAME,
-            CFG_LAG_MEMBER_TABLE_NAME,
+        DBConnector conf_db(CONFIG_DB, DBConnector::DEFAULT_UNIXSOCKET, 0);
+        DBConnector appl_db(APPL_DB, DBConnector::DEFAULT_UNIXSOCKET, 0);
+        DBConnector stat_db(STATE_DB, DBConnector::DEFAULT_UNIXSOCKET, 0);
+
+        TableConnector conf_lag_table(&conf_db, CFG_LAG_TABLE_NAME);
+        TableConnector conf_lag_member_table(&conf_db, CFG_LAG_MEMBER_TABLE_NAME);
+        TableConnector stat_port_table(&stat_db, STATE_PORT_TABLE_NAME);
+
+        vector<TableConnector> tables = {
+            conf_lag_table,
+            conf_lag_member_table,
+            stat_port_table
         };
 
-        DBConnector cfgDb(CONFIG_DB, DBConnector::DEFAULT_UNIXSOCKET, 0);
-        DBConnector stateDb(STATE_DB, DBConnector::DEFAULT_UNIXSOCKET, 0);
-
-        LagMgr lagmgr(&cfgDb, &stateDb, cfg_port_tables);
+        LagMgr lagmgr(&conf_db, &appl_db, &stat_db, tables);
 
         vector<Orch *> cfgOrchList = {&lagmgr};
 
@@ -42,14 +48,6 @@ int main(int argc, char **argv)
         {
             s.addSelectables(o->getSelectables());
         }
-
-        NetLink netlink;
-        netlink.registerGroup(RTNLGRP_LINK);
-        
-        NetDispatcher::getInstance().registerMessageHandler(RTM_NEWLINK, &lagmgr);
-        NetDispatcher::getInstance().registerMessageHandler(RTM_DELLINK, &lagmgr);
-
-        s.addSelectable(&netlink);
 
         while (true)
         {
@@ -68,11 +66,8 @@ int main(int argc, char **argv)
                 continue;
             }
 
-            if (sel != (NetLink *)&netlink)
-            {
-                auto *c = (Executor *)sel;
-                c->execute();
-            }
+            auto *c = (Executor *)sel;
+            c->execute();
         }
     }
     catch (const exception &e)

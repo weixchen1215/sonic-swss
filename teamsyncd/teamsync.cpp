@@ -70,11 +70,6 @@ void TeamSync::addLag(const string &lagName, int ifindex, bool admin_state,
     auto sync = make_shared<TeamPortSync>(lagName, ifindex, &m_lagMemberTable);
     m_select->addSelectable(sync.get());
     m_teamPorts[lagName] = sync;
-
-    fvVector.clear();
-    FieldValueTuple s("state", "ok");
-    fvVector.push_back(s);
-    m_stateLagTable.set(lagName, fvVector);
 }
 
 void TeamSync::removeLag(const string &lagName)

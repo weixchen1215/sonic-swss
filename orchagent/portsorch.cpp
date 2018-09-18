@@ -132,6 +132,11 @@ PortsOrch::PortsOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames)
     m_counter_db = shared_ptr<DBConnector>(new DBConnector(COUNTERS_DB, DBConnector::DEFAULT_UNIXSOCKET, 0));
     m_counterTable = unique_ptr<Table>(new Table(m_counter_db.get(), COUNTERS_PORT_NAME_MAP));
 
+    /* Initialize state table */
+    m_state_db = shared_ptr<DBConnector>(new DBConnector(STATE_DB, DBConnector::DEFAULT_UNIXSOCKET, 0));
+    m_statePortTable = unique_ptr<Table>(new Table(m_state_db.get(), STATE_PORT_TABLE_NAME));
+    m_stateLagTable = unique_ptr<Table>(new Table(m_state_db.get(), STATE_LAG_TABLE_NAME));
+
     /* Initialize port table */
     m_portTable = unique_ptr<Table>(new Table(db, APP_PORT_TABLE_NAME));
 
@@ -2613,6 +2618,11 @@ bool PortsOrch::addLag(string lag_alias)
     lag.m_members = set<string>();
     m_portList[lag_alias] = lag;
 
+    vector<FieldValueTuple> fvVector;
+    FieldValueTuple s("state", "ok");
+    fvVector.push_back(s);
+    m_stateLagTable->set(lag_alias, fvVector);
+
     return true;
 }
 
@@ -2642,6 +2652,8 @@ bool PortsOrch::removeLag(Port lag)
     SWSS_LOG_NOTICE("Remove LAG %s lid:%lx", lag.m_alias.c_str(), lag.m_lag_id);
 
     m_portList.erase(lag.m_alias);
+
+    m_stateLagTable->del(lag.m_alias);
 
     return true;
 }

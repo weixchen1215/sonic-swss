@@ -286,6 +286,10 @@ void NeighOrch::doTask(Consumer &consumer)
         KeyOpFieldsValuesTuple t = it->second;
 
         string key = kfvKey(t);
+        string op = kfvOp(t);
+    SWSS_LOG_NOTICE("get information: %s %s", key.c_str(), op.c_str());
+
+
         size_t found = key.find(':');
         if (found == string::npos)
         {
@@ -305,14 +309,14 @@ void NeighOrch::doTask(Consumer &consumer)
         Port p;
         if (!gPortsOrch->getPort(alias, p))
         {
-            SWSS_LOG_INFO("Port %s doesn't exist", alias.c_str());
+            SWSS_LOG_NOTICE("Port %s doesn't exist", alias.c_str());
             it++;
             continue;
         }
 
         if (!p.m_rif_id)
         {
-            SWSS_LOG_INFO("Router interface doesn't exist on %s", alias.c_str());
+            SWSS_LOG_NOTICE("Router interface doesn't exist on %s", alias.c_str());
             it++;
             continue;
         }
@@ -320,8 +324,6 @@ void NeighOrch::doTask(Consumer &consumer)
         IpAddress ip_address(key.substr(found+1));
 
         NeighborEntry neighbor_entry = { ip_address, alias };
-
-        string op = kfvOp(t);
 
         if (op == SET_COMMAND)
         {
@@ -349,9 +351,14 @@ void NeighOrch::doTask(Consumer &consumer)
             if (m_syncdNeighbors.find(neighbor_entry) != m_syncdNeighbors.end())
             {
                 if (removeNeighbor(neighbor_entry))
+                {
                     it = consumer.m_toSync.erase(it);
+                }
                 else
+                {
+                    SWSS_LOG_NOTICE("why i am here???");
                     it++;
+                }
             }
             else
                 /* Cannot locate the neighbor */
@@ -458,11 +465,13 @@ bool NeighOrch::removeNeighbor(NeighborEntry neighborEntry)
     string alias = neighborEntry.alias;
 
     if (m_syncdNeighbors.find(neighborEntry) == m_syncdNeighbors.end())
+    {
         return true;
+    }
 
     if (m_syncdNextHops[ip_address].ref_count > 0)
     {
-        SWSS_LOG_INFO("Failed to remove still referenced neighbor %s on %s",
+        SWSS_LOG_NOTICE("Failed to remove still referenced neighbor %s on %s",
                       m_syncdNeighbors[neighborEntry].to_string().c_str(), alias.c_str());
         return false;
     }
