@@ -27,8 +27,10 @@ private:
     Table m_stateLagTable;
 
     ProducerStateTable m_appPortTable;
+    ProducerStateTable m_appLagTable;
 
     set<string> m_portList;
+    set<string> m_lagList;
 
     void doTask(Consumer &consumer);
     void doLagTask(Consumer &consumer);
@@ -41,6 +43,7 @@ private:
     bool removeLagMember(const string &lag, const string &member);
 
     bool setLagAdminStatus(const string &alias, const bool up);
+    bool setLagMtu(const string &alias, const string &mtu);
 
     void recover();
     bool isPortStateOk(const string&);

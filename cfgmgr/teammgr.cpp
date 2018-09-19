@@ -16,6 +16,7 @@ LagMgr::LagMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *staDb, const
     m_cfgLagTable(cfgDb, CFG_LAG_TABLE_NAME),
     m_cfgLagMemberTable(cfgDb, CFG_LAG_MEMBER_TABLE_NAME),
     m_appPortTable(appDb, APP_PORT_TABLE_NAME),
+    m_appLagTable(appDb, APP_LAG_TABLE_NAME),
     m_statePortTable(staDb, STATE_PORT_TABLE_NAME),
     m_stateLagTable(staDb, STATE_LAG_TABLE_NAME)
 {
@@ -95,7 +96,8 @@ void LagMgr::doLagTask(Consumer &consumer)
         {
                 int min_links = 0;
                 bool fallback = false;
-                bool admin_status = false;
+                bool admin_status = true;
+                string mtu;
 
                 for (auto i : kfvFieldsValues(t))
                 {
@@ -114,19 +116,29 @@ void LagMgr::doLagTask(Consumer &consumer)
                     {
                         admin_status = fvValue(i) == "up";
                     }
-                    else if (fvField(i) == "admin_status")
+                    else if (fvField(i) == "mtu")
                     {
-//                        mtu = stoi(fvValue(i));
+                        mtu = fvValue(i);
+                        SWSS_LOG_NOTICE("get mtu value is %s", mtu.c_str());
                     }
                 }
 
-                addLag(alias, min_links, fallback);
-                setLagAdminStatus(alias, admin_status);
+                if (m_lagList.find(alias) == m_lagList.end())
+                {
+                    addLag(alias, min_links, fallback);
+                    m_lagList.insert(alias);
+                }
 
+                setLagAdminStatus(alias, admin_status);
+                setLagMtu(alias, mtu);
         }
         else if (op == DEL_COMMAND)
         {
+            if (m_lagList.find(alias) != m_lagList.end())
+            {
                 removeLag(alias);
+                m_lagList.erase(alias);
+            }
         }
 
         it = consumer.m_toSync.erase(it);
@@ -154,13 +166,19 @@ void LagMgr::doLagMemberTask(Consumer &consumer)
                 continue;
             }
 
-            addLagMember(lag, member);
-            m_portList.insert(member);
+            if (m_portList.find(member) == m_portList.end())
+            {
+                addLagMember(lag, member);
+                m_portList.insert(member);
+            }
         }
         else if (op == DEL_COMMAND)
         {
-            removeLagMember(lag, member);
-            m_portList.erase(member);
+            if (m_portList.find(member) != m_portList.end())
+            {
+                removeLagMember(lag, member);
+                m_portList.erase(member);
+            }
         }
 
         it = consumer.m_toSync.erase(it);
@@ -227,6 +245,37 @@ bool LagMgr::setLagAdminStatus(const string &alias, const bool up)
     return true;
 }
 
+bool LagMgr::setLagMtu(const string &alias, const string &mtu)
+{
+    stringstream cmd;
+    string res;
+
+    cmd << IP_CMD << " link set dev " << alias << " mtu " << mtu;
+    EXEC_WITH_ERROR_THROW(cmd.str(), res);
+
+    vector<FieldValueTuple> fvs;
+    FieldValueTuple fv("mtu", mtu);
+    fvs.push_back(fv);
+    m_appLagTable.set(alias, fvs);
+
+    vector<string> keys;
+    m_cfgLagMemberTable.getKeys(keys);
+
+    for (auto key : keys)
+    {
+        auto tokens = tokenize(key, '|');
+        auto lag = tokens[0];
+        auto member = tokens[1];
+
+        if (alias == lag)
+        {
+            m_appPortTable.set(member, fvs);
+        }
+    }
+
+    return true;
+}
+
 bool LagMgr::addLag(const string &alias, int min_links, bool fallback)
 {
     stringstream cmd;
@@ -266,17 +315,15 @@ bool LagMgr::addLagMember(const string &lag, const string &member)
     stringstream cmd;
     string res;
 
-    // TODO admin down lag member first
+    // admin down lag member first
     cmd << IP_CMD << " link set dev " << member << " down; ";
     cmd << TEAMDCTL_CMD << " " << lag << " port add " << member << "; ";
-
-    // TODO apply MTU configurations from master etc
 
     vector<FieldValueTuple> fvs;
     m_cfgPortTable.get(member, fvs);
     
-    bool up = false;
-
+    // set to up by default
+    bool up = true;
     for (auto i : fvs)
     {
         if (fvField(i) == "admin_status")
@@ -286,15 +333,27 @@ bool LagMgr::addLagMember(const string &lag, const string &member)
         }
     }
 
+    m_cfgLagTable.get(lag, fvs);
+
+    string mtu = "9100";
+    for (auto i : fvs)
+    {
+        if (fvField(i) == "mtu")
+        {
+            mtu = fvValue(i);
+        }
+    }
+
         cmd << IP_CMD << " link set dev " << member << (up ? " up" : " down");
+    EXEC_WITH_ERROR_THROW(cmd.str(), res);
+    SWSS_LOG_NOTICE("Add %s to port channel %s", member.c_str(), lag.c_str());
 
     fvs.clear();
     FieldValueTuple fv("admin_status", (up ? "up" : "down"));
     fvs.push_back(fv);
+    fv = FieldValueTuple("mtu", mtu);
+    fvs.push_back(fv);
     m_appPortTable.set(member, fvs);
-
-    EXEC_WITH_ERROR_THROW(cmd.str(), res);
-    SWSS_LOG_NOTICE("Add %s to port channel %s", member.c_str(), lag.c_str());
 
     return true;
 }
@@ -304,10 +363,36 @@ bool LagMgr::removeLagMember(const string &lag, const string &member)
     stringstream cmd;
     string res;
 
-    cmd << TEAMDCTL_CMD << " " << lag << " port remove " << member;
-    EXEC_WITH_ERROR_THROW(cmd.str(), res);
+    cmd << TEAMDCTL_CMD << " " << lag << " port remove " << member << "; ";
 
-    // TODO apply port original configurations
+
+    vector<FieldValueTuple> fvs;
+    m_cfgPortTable.get(member, fvs);
+
+    bool up = true;
+    string mtu = "9100";
+    for (auto i : fvs)
+    {
+        if (fvField(i) == "admin_status")
+        {
+            up = fvValue(i) == "up";
+        }
+        else if (fvField(i) == "mtu")
+        {
+            mtu = fvValue(i);
+        }
+    }
+
+    cmd << IP_CMD << " link set dev " << member << (up ? " up; " : " down; ");
+    cmd << IP_CMD << " link set dev " << member << " mtu " << mtu;
+
+    EXEC_WITH_ERROR_THROW(cmd.str(), res);
+    fvs.clear();
+    FieldValueTuple fv("admin_status", (up ? "up" : "down"));
+    fvs.push_back(fv);
+    fv = FieldValueTuple("mtu", mtu);
+    fvs.push_back(fv);
+    m_appPortTable.set(member, fvs);
 
     SWSS_LOG_NOTICE("Remove %s from port channel %s", member.c_str(), lag.c_str());
 
