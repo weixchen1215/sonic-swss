@@ -1972,3 +1972,207 @@ bool VNetRouteOrch::delOperation(const Request& request)
 
     return true;
 }
+
+VNetCFGRouteOrch::VNetCFGRouteOrch(DBConnector *db, DBConnector *appDb, vector<string> &tableNames)
+                                  : Orch2(db, tableNames, request_),
+                                  m_appVnetRouteTable(appDb, APP_VNET_RT_TABLE_NAME),
+                                  m_appVnetRouteTunnelTable(appDb, APP_VNET_RT_TUNNEL_TABLE_NAME)
+{
+    SWSS_LOG_ENTER();
+
+    handler_map_.insert(handler_pair(CFG_VNET_RT_TABLE_NAME, &VNetCFGRouteOrch::handleRoutes));
+    handler_map_.insert(handler_pair(CFG_VNET_RT_TUNNEL_TABLE_NAME, &VNetCFGRouteOrch::handleTunnel));
+}
+
+bool VNetCFGRouteOrch::doVnetTunnelRouteCreateTask(string tableKey, string ip, string mac, uint32_t vni)
+{
+    SWSS_LOG_ENTER();
+
+    std::replace(tableKey.begin(), tableKey.end(), config_db_key_delimiter, delimiter);
+    FieldValueTuple fv1("endpoint", ip);
+    FieldValueTuple fv2("mac_address", mac);
+    FieldValueTuple fv3("vni", std::to_string(vni));
+
+    std::vector<FieldValueTuple> fvVector = { fv1, fv2, fv3 };
+    m_appVnetRouteTunnelTable.set(tableKey, fvVector);
+
+    SWSS_LOG_NOTICE("Create vnet route tunnel %s", tableKey.c_str());
+    return true;
+}
+
+bool VNetCFGRouteOrch::doVnetTunnelRouteDeleteTask(string tableKey)
+{
+    SWSS_LOG_ENTER();
+
+    std::replace(tableKey.begin(), tableKey.end(), config_db_key_delimiter, delimiter);
+    m_appVnetRouteTunnelTable.del(tableKey);
+
+    SWSS_LOG_NOTICE("Delete vnet route tunnel %s", tableKey.c_str());
+    return true;
+}
+
+bool VNetCFGRouteOrch::doVnetRouteCreateTask(string tableKey, string ifName, string nh)
+{
+    SWSS_LOG_ENTER();
+
+    std::replace(tableKey.begin(), tableKey.end(), config_db_key_delimiter, delimiter);
+    FieldValueTuple fv1("ifname", ifName);
+    FieldValueTuple fv2("nexthop", nh);
+    std::vector<FieldValueTuple> fvVector = { fv1, fv2 };
+    m_appVnetRouteTable.set(tableKey, fvVector);
+
+    SWSS_LOG_NOTICE("Create vnet route %s", tableKey.c_str());
+    return true;
+}
+
+bool VNetCFGRouteOrch::doVnetRouteDeleteTask(string tableKey)
+{
+    SWSS_LOG_ENTER();
+
+    std::replace(tableKey.begin(), tableKey.end(), config_db_key_delimiter, delimiter);
+    m_appVnetRouteTable.del(tableKey);
+
+    SWSS_LOG_NOTICE("Delete vnet route %s", tableKey.c_str());
+    return true;
+}
+
+bool VNetCFGRouteOrch::handleRoutes(const Request& request)
+{
+    SWSS_LOG_ENTER();
+
+    string ifname = "";
+    string ipstr = "";
+    for (const auto& name: request.getAttrFieldNames())
+    {
+        if (name == "ifname")
+        {
+            ifname = request.getAttrString(name);
+        }
+        else if (name == "nexthop")
+        {
+            ipstr = request.getAttrString(name);
+        }
+        else
+        {
+            SWSS_LOG_INFO("Unknown attribute: %s", name.c_str());
+            continue;
+        }
+	   }
+    const std::string& vnet_name = request.getKeyString(0);
+    const auto table_key = request.getFullKey();
+    auto ip_pfx = request.getKeyIpPrefix(1);
+    auto op = request.getOperation();
+
+    SWSS_LOG_INFO("VNET-RT '%s' op '%s' for ip %s", vnet_name.c_str(),
+				              op.c_str(), ip_pfx.to_string().c_str());
+
+    if (op == SET_COMMAND)
+    {
+        return doVnetRouteCreateTask(table_key, ifname, ipstr);
+    }
+    else
+    {
+        return doVnetRouteDeleteTask(table_key);
+    }
+
+    return true;
+}
+
+bool VNetCFGRouteOrch::handleTunnel(const Request& request)
+{
+    SWSS_LOG_ENTER();
+
+    IpAddress ip;
+    MacAddress mac;
+    uint32_t vni = 0;
+
+    for (const auto& name: request.getAttrFieldNames())
+    {
+        if (name == "endpoint")
+        {
+            ip = request.getAttrIP(name);
+        }
+        else if (name == "vni")
+        {
+            vni = static_cast<uint32_t>(request.getAttrUint(name));
+        }
+        else if (name == "mac_address")
+        {
+            mac = request.getAttrMacAddress(name);
+        }
+        else
+        {
+            SWSS_LOG_INFO("Unknown attribute: %s", name.c_str());
+            continue;
+        }
+    }
+    const std::string& vnet_name = request.getKeyString(0);
+    const auto table_key = request.getFullKey();
+    auto ip_pfx = request.getKeyIpPrefix(1);
+    auto op = request.getOperation();
+
+    SWSS_LOG_INFO("VNET-RT '%s' op '%s' for pfx %s", vnet_name.c_str(),
+				   op.c_str(), ip_pfx.to_string().c_str());
+
+    if (op == SET_COMMAND)
+    {
+        return doVnetTunnelRouteCreateTask(table_key, ip.to_string(), mac.to_string(), vni);
+    }
+    else
+    {
+        return doVnetTunnelRouteDeleteTask(table_key);
+    }
+
+    return true;
+}
+
+bool VNetCFGRouteOrch::addOperation(const Request& request)
+{
+    SWSS_LOG_ENTER();
+
+    try
+    {
+        auto& tn = request.getTableName();
+        if (handler_map_.find(tn) == handler_map_.end())
+        {
+            SWSS_LOG_ERROR(" %s handler is not initialized", tn.c_str());
+            return true;
+        }
+        return ((this->*(handler_map_[tn]))(request));
+    }
+    catch(std::runtime_error& _)
+    {
+        SWSS_LOG_ERROR("VNET add operation error %s ", _.what());
+        return true;
+    }
+
+    return true;
+}
+
+bool VNetCFGRouteOrch::delOperation(const Request& request)
+{
+    SWSS_LOG_ENTER();
+
+    try
+    {
+        auto& tn = request.getTableName();
+        if (handler_map_.find(tn) == handler_map_.end())
+        {
+            SWSS_LOG_ERROR(" %s handler is not initialized", tn.c_str());
+            return true;
+        }
+
+        return ((this->*(handler_map_[tn]))(request));
+    }
+    catch(std::runtime_error& _)
+    {
+        SWSS_LOG_ERROR("VNET del operation error %s ", _.what());
+        return true;
+    }
+
+    return true;
+}
+
+
+
+

@@ -9,6 +9,7 @@
 
 #include "request_parser.h"
 #include "ipaddresses.h"
+#include "producerstatetable.h"
 
 #define VNET_BITMAP_SIZE 32
 #define VNET_TUNNEL_SIZE 512
@@ -363,6 +364,38 @@ private:
 
     VNetOrch *vnet_orch_;
     VNetRouteRequest request_;
+    handler_map handler_map_;
+};
+
+class VNetCFGRouteRequest : public Request
+{
+public:
+    VNetCFGRouteRequest() : Request(vnet_route_description, '|') { }
+};
+
+class VNetCFGRouteOrch : public Orch2
+{
+public:
+    VNetCFGRouteOrch(DBConnector *db, DBConnector *appDb, vector<string> &tableNames);
+
+    typedef pair<string, bool (VNetCFGRouteOrch::*) (const Request& )> handler_pair;
+    typedef map<string, bool (VNetCFGRouteOrch::*) (const Request& )> handler_map;
+
+private:
+    virtual bool addOperation(const Request& request);
+    virtual bool delOperation(const Request& request);
+
+    bool handleRoutes(const Request&);
+    bool handleTunnel(const Request&);
+
+    bool doVnetTunnelRouteCreateTask(string key, string ip, string mac, uint32_t vni);
+    bool doVnetTunnelRouteDeleteTask(string key);
+
+    bool doVnetRouteCreateTask(string key, string ifName, string nh);
+    bool doVnetRouteDeleteTask(string key);
+
+    VNetCFGRouteRequest request_;
+    ProducerStateTable m_appVnetRouteTable, m_appVnetRouteTunnelTable;
     handler_map handler_map_;
 };
 
