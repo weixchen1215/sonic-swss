@@ -10,6 +10,8 @@
 #include "request_parser.h"
 #include "ipaddresses.h"
 
+#include "producerstatetable.h"
+
 #define VNET_BITMAP_SIZE 32
 #define VNET_TUNNEL_SIZE 512
 #define VNET_NEIGHBOR_MAX 0xffff
@@ -364,6 +366,24 @@ private:
     VNetOrch *vnet_orch_;
     VNetRouteRequest request_;
     handler_map handler_map_;
+};
+
+class VNetCfgRouteOrch : public Orch
+{
+public:
+    VNetCfgRouteOrch(DBConnector *db, DBConnector *appDb, vector<string> &tableNames);
+    using Orch::doTask;
+
+private:
+    void doTask(Consumer &consumer);
+
+    bool doVnetTunnelRouteCreateTask(const KeyOpFieldsValuesTuple & t);
+    bool doVnetTunnelRouteDeleteTask(const KeyOpFieldsValuesTuple & t);
+
+    bool doVnetRouteCreateTask(const KeyOpFieldsValuesTuple & t);
+    bool doVnetRouteDeleteTask(const KeyOpFieldsValuesTuple & t);
+
+    ProducerStateTable m_appVnetRouteTable, m_appVnetRouteTunnelTable;
 };
 
 #endif // __VNETORCH_H
