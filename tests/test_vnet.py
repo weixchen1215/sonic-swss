@@ -117,7 +117,6 @@ def create_vnet_routes(dvs, prefix, vnet_name, endpoint, mac="", vni=0):
         attrs,
     )
 
-
     time.sleep(2)
 
 

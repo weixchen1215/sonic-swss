@@ -9,7 +9,6 @@
 
 #include "request_parser.h"
 #include "ipaddresses.h"
-
 #include "producerstatetable.h"
 
 #define VNET_BITMAP_SIZE 32
@@ -377,11 +376,8 @@ public:
 private:
     void doTask(Consumer &consumer);
 
-    bool doVnetTunnelRouteCreateTask(const KeyOpFieldsValuesTuple & t);
-    bool doVnetTunnelRouteDeleteTask(const KeyOpFieldsValuesTuple & t);
-
-    bool doVnetRouteCreateTask(const KeyOpFieldsValuesTuple & t);
-    bool doVnetRouteDeleteTask(const KeyOpFieldsValuesTuple & t);
+    bool doVnetTunnelRouteTask(const KeyOpFieldsValuesTuple & t, const std::string & op);
+    bool doVnetRouteTask(const KeyOpFieldsValuesTuple & t, const std::string & op);
 
     ProducerStateTable m_appVnetRouteTable, m_appVnetRouteTunnelTable;
 };

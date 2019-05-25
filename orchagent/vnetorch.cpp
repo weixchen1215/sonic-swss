@@ -1986,45 +1986,23 @@ void VNetCfgRouteOrch::doTask(Consumer &consumer)
 
     const string & table_name = consumer.getTableName();
     auto it = consumer.m_toSync.begin();
+
     while (it != consumer.m_toSync.end())
     {
         bool task_result = false;
         auto t = it->second;
         const std::string & op = kfvOp(t);
-
-        if (op == SET_COMMAND)
+        if (table_name == CFG_VNET_RT_TABLE_NAME)
         {
-            if (table_name == CFG_VNET_RT_TABLE_NAME)
-            {
-                task_result = doVnetRouteCreateTask(t);
-            }
-            else if (table_name == CFG_VNET_RT_TUNNEL_TABLE_NAME)
-            {
-                task_result = doVnetTunnelRouteCreateTask(t);
-            }
-            else
-            {
-                SWSS_LOG_ERROR("Unknown table : %s", table_name.c_str());
-            }
+            task_result = doVnetRouteTask(t, op);
         }
-        else if (op == DEL_COMMAND)
+        else if (table_name == CFG_VNET_RT_TUNNEL_TABLE_NAME)
         {
-            if (table_name == CFG_VNET_RT_TABLE_NAME)
-            {
-                task_result = doVnetRouteDeleteTask(t);
-            }
-            else if (table_name == CFG_VNET_RT_TUNNEL_TABLE_NAME)
-            {
-                task_result = doVnetTunnelRouteDeleteTask(t);
-            }
-            else
-            {
-                SWSS_LOG_ERROR("Unknown table : %s", table_name.c_str());
-            }
+            task_result = doVnetTunnelRouteTask(t, op);
         }
         else
         {
-            SWSS_LOG_ERROR("Unknown command : %s", op.c_str());
+            SWSS_LOG_ERROR("Unknown table : %s", table_name.c_str());
         }
 
         if (task_result == true)
@@ -2038,51 +2016,52 @@ void VNetCfgRouteOrch::doTask(Consumer &consumer)
     }
 }
 
-bool VNetCfgRouteOrch::doVnetTunnelRouteCreateTask(const KeyOpFieldsValuesTuple & t)
+bool VNetCfgRouteOrch::doVnetTunnelRouteTask(const KeyOpFieldsValuesTuple & t, const std::string & op)
 {
     SWSS_LOG_ENTER();
 
     std::string vnetRouteTunnelName = kfvKey(t);
     std::replace(vnetRouteTunnelName.begin(), vnetRouteTunnelName.end(), config_db_key_delimiter, delimiter);
+    if (op == SET_COMMAND)
+    {
+        m_appVnetRouteTunnelTable.set(vnetRouteTunnelName, kfvFieldsValues(t));
+        SWSS_LOG_NOTICE("Create vnet route tunnel %s", vnetRouteTunnelName.c_str());
+    }
+    else if (op == DEL_COMMAND)
+    {
+        m_appVnetRouteTunnelTable.del(vnetRouteTunnelName);
+        SWSS_LOG_NOTICE("Delete vnet route tunnel %s", vnetRouteTunnelName.c_str());
+    }
+    else
+    {
+        SWSS_LOG_ERROR("Unknown command : %s", op.c_str());
+        return false;
+    }
 
-    m_appVnetRouteTunnelTable.set(vnetRouteTunnelName, kfvFieldsValues(t));
-
-    SWSS_LOG_NOTICE("Create vnet route tunnel %s", vnetRouteTunnelName.c_str());
     return true;
 }
 
-bool VNetCfgRouteOrch::doVnetTunnelRouteDeleteTask(const KeyOpFieldsValuesTuple & t)
-{
-    SWSS_LOG_ENTER();
-
-    std::string vnetRouteTunnelName = kfvKey(t);
-    std::replace(vnetRouteTunnelName.begin(), vnetRouteTunnelName.end(), config_db_key_delimiter, delimiter);
-    m_appVnetRouteTunnelTable.del(vnetRouteTunnelName);
-
-    SWSS_LOG_NOTICE("Delete vnet route tunnel %s", vnetRouteTunnelName.c_str());
-    return true;
-}
-
-bool VNetCfgRouteOrch::doVnetRouteCreateTask(const KeyOpFieldsValuesTuple & t)
-{
-    SWSS_LOG_ENTER();
-
-    std::string vnetRouteName = kfvKey(t);
-    std::replace(vnetRouteName.begin(), vnetRouteName.end(), config_db_key_delimiter, delimiter);
-    m_appVnetRouteTable.set(vnetRouteName, kfvFieldsValues(t));
-
-    SWSS_LOG_NOTICE("Create vnet route %s", vnetRouteName.c_str());
-    return true;
-}
-
-bool VNetCfgRouteOrch::doVnetRouteDeleteTask(const KeyOpFieldsValuesTuple & t)
+bool VNetCfgRouteOrch::doVnetRouteTask(const KeyOpFieldsValuesTuple & t, const std::string & op)
 {
     SWSS_LOG_ENTER();
 
     std::string vnetRouteName = kfvKey(t);
     std::replace(vnetRouteName.begin(), vnetRouteName.end(), config_db_key_delimiter, delimiter);
-    m_appVnetRouteTable.del(vnetRouteName);
+    if (op == SET_COMMAND)
+    {
+        m_appVnetRouteTable.set(vnetRouteName, kfvFieldsValues(t));
+        SWSS_LOG_NOTICE("Create vnet route %s", vnetRouteName.c_str());
+    }
+    else if (op == DEL_COMMAND)
+    {
+        m_appVnetRouteTable.del(vnetRouteName);
+        SWSS_LOG_NOTICE("Delete vnet route %s", vnetRouteName.c_str());
+    }
+    else
+    {
+        SWSS_LOG_ERROR("Unknown command : %s", op.c_str());
+        return false;
+    }
 
-    SWSS_LOG_NOTICE("Delete vnet route %s", vnetRouteName.c_str());
     return true;
 }
