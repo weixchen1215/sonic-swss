@@ -1991,7 +1991,7 @@ void VNetCfgRouteOrch::doTask(Consumer &consumer)
     {
         bool task_result = false;
         auto t = it->second;
-        const std::string & op = kfvOp(t);
+        const string & op = kfvOp(t);
         if (table_name == CFG_VNET_RT_TABLE_NAME)
         {
             task_result = doVnetRouteTask(t, op);
@@ -2016,21 +2016,21 @@ void VNetCfgRouteOrch::doTask(Consumer &consumer)
     }
 }
 
-bool VNetCfgRouteOrch::doVnetTunnelRouteTask(const KeyOpFieldsValuesTuple & t, const std::string & op)
+bool VNetCfgRouteOrch::doVnetTunnelRouteTask(const KeyOpFieldsValuesTuple & t, const string & op)
 {
     SWSS_LOG_ENTER();
 
-    std::string vnetRouteTunnelName = kfvKey(t);
-    std::replace(vnetRouteTunnelName.begin(), vnetRouteTunnelName.end(), config_db_key_delimiter, delimiter);
+    string vnetRouteTunnelName = kfvKey(t);
+    replace(vnetRouteTunnelName.begin(), vnetRouteTunnelName.end(), config_db_key_delimiter, delimiter);
     if (op == SET_COMMAND)
     {
         m_appVnetRouteTunnelTable.set(vnetRouteTunnelName, kfvFieldsValues(t));
-        SWSS_LOG_NOTICE("Create vnet route tunnel %s", vnetRouteTunnelName.c_str());
+        SWSS_LOG_INFO("Create vnet route tunnel %s", vnetRouteTunnelName.c_str());
     }
     else if (op == DEL_COMMAND)
     {
         m_appVnetRouteTunnelTable.del(vnetRouteTunnelName);
-        SWSS_LOG_NOTICE("Delete vnet route tunnel %s", vnetRouteTunnelName.c_str());
+        SWSS_LOG_INFO("Delete vnet route tunnel %s", vnetRouteTunnelName.c_str());
     }
     else
     {
@@ -2041,21 +2041,21 @@ bool VNetCfgRouteOrch::doVnetTunnelRouteTask(const KeyOpFieldsValuesTuple & t, c
     return true;
 }
 
-bool VNetCfgRouteOrch::doVnetRouteTask(const KeyOpFieldsValuesTuple & t, const std::string & op)
+bool VNetCfgRouteOrch::doVnetRouteTask(const KeyOpFieldsValuesTuple & t, const string & op)
 {
     SWSS_LOG_ENTER();
 
-    std::string vnetRouteName = kfvKey(t);
-    std::replace(vnetRouteName.begin(), vnetRouteName.end(), config_db_key_delimiter, delimiter);
+    string vnetRouteName = kfvKey(t);
+    replace(vnetRouteName.begin(), vnetRouteName.end(), config_db_key_delimiter, delimiter);
     if (op == SET_COMMAND)
     {
         m_appVnetRouteTable.set(vnetRouteName, kfvFieldsValues(t));
-        SWSS_LOG_NOTICE("Create vnet route %s", vnetRouteName.c_str());
+        SWSS_LOG_INFO("Create vnet route %s", vnetRouteName.c_str());
     }
     else if (op == DEL_COMMAND)
     {
         m_appVnetRouteTable.del(vnetRouteName);
-        SWSS_LOG_NOTICE("Delete vnet route %s", vnetRouteName.c_str());
+        SWSS_LOG_INFO("Delete vnet route %s", vnetRouteName.c_str());
     }
     else
     {
