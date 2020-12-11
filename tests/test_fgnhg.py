@@ -192,6 +192,21 @@ def startup_link(dvs, db, port):
     dvs.servers[port].runcmd("ip link set up dev eth0") == 0
     db.wait_for_field_match("PORT_TABLE", "Ethernet%d" % (port * 4), {"oper_status": "up"})
 
+def run_warm_reboot(dvs):
+    dvs.runcmd("config warm_restart enable swss")
+
+    # Stop swss before modifing the configDB
+    dvs.stop_swss()
+    time.sleep(1)
+
+    # start to apply new port_config.ini
+    dvs.start_swss()
+    dvs.runcmd(['sh', '-c', 'supervisorctl start neighsyncd'])
+    dvs.runcmd(['sh', '-c', 'supervisorctl start restore_neighbors'])
+
+    # Enabling some extra logging for validating the order of orchagent
+    dvs.runcmd("swssloglevel -l INFO -c orchagent")
+    time.sleep(5)
 
 def verify_programmed_fg_state_db_entry(state_db,nh_memb_exp_count):
     memb_dict = nh_memb_exp_count
@@ -331,6 +346,20 @@ class TestFineGrainedNextHopGroup(object):
         nh_memb_exp_count = {"10.0.0.7":20,"10.0.0.9":20,"10.0.0.11":20}
         validate_fine_grained_asic_n_state_db_entries(asic_db, state_db, ip_to_if_map,
                                 nh_memb_exp_count, nh_oid_map, nhgid, bucket_size)
+        
+        run_warm_reboot(dvs)
+
+        keys = asic_db.wait_for_n_keys(ASIC_ROUTE_TB, asic_routes_count + 1)
+        nhgid = asic_route_exists_and_is_nhg(asic_db, keys, fg_nhg_prefix)
+        assert nhgid is not None
+
+        validate_asic_nhg(asic_db, nhgid, bucket_size)
+
+        nh_oid_map = get_nh_oid_map(asic_db)
+
+        nh_memb_exp_count = {"10.0.0.7":20,"10.0.0.9":20,"10.0.0.11":20}
+        validate_fine_grained_asic_n_state_db_entries(asic_db, state_db, ip_to_if_map,
+                                nh_memb_exp_count, nh_oid_map, nhgid, bucket_size)
 
         # Bring down 1 next hop in bank 1
         nh_memb_exp_count = {"10.0.0.7":30,"10.0.0.11":30}
@@ -352,25 +381,7 @@ class TestFineGrainedNextHopGroup(object):
         program_route_and_validate_fine_grained_ecmp(app_db.db_connection, asic_db, state_db, ip_to_if_map,
                             fg_nhg_prefix, nh_memb_exp_count, nh_oid_map, nhgid, bucket_size)
 
-        #############################################################################
-        #                                                                           #
-        #                        swss Warm-Restart Testing Begin                    #
-        #                                                                           #
-        #############################################################################
-        dvs.runcmd("config warm_restart enable swss")
-
-        # Stop swss before modifing the configDB
-        dvs.stop_swss()
-        time.sleep(1)
-
-        # start to apply new port_config.ini
-        dvs.start_swss()
-        dvs.runcmd(['sh', '-c', 'supervisorctl start neighsyncd'])
-        dvs.runcmd(['sh', '-c', 'supervisorctl start restore_neighbors'])
-
-        # Enabling some extra logging for validating the order of orchagent
-        dvs.runcmd("swssloglevel -l INFO -c orchagent")
-        time.sleep(5)
+        run_warm_reboot(dvs)
 
         keys = asic_db.wait_for_n_keys(ASIC_ROUTE_TB, asic_routes_count + 1)
         nhgid = asic_route_exists_and_is_nhg(asic_db, keys, fg_nhg_prefix)
@@ -383,13 +394,6 @@ class TestFineGrainedNextHopGroup(object):
         nh_memb_exp_count = {"10.0.0.1":10,"10.0.0.3":10,"10.0.0.5":10,"10.0.0.7":10,"10.0.0.9":10,"10.0.0.11":10}
         program_route_and_validate_fine_grained_ecmp(app_db.db_connection, asic_db, state_db, ip_to_if_map,
                             fg_nhg_prefix, nh_memb_exp_count, nh_oid_map, nhgid, bucket_size)
-
-        #############################################################################
-        #                                                                           #
-        #                        swss Warm-Restart Testing END                      #
-        #                            get to normal state                            #
-        #############################################################################
-
 
         # Bring down 1 next-hop from bank 0, and 2 next-hops from bank 1
         nh_memb_exp_count = {"10.0.0.1":15,"10.0.0.5":15,"10.0.0.11":30}

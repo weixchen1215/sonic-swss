@@ -1662,7 +1662,7 @@ bool FgNhgOrch::doTaskFgNhgMember(const KeyOpFieldsValuesTuple & t)
             }
             fgNhg_entry->second.next_hops[next_hop] = fg_nh_info;
             SWSS_LOG_INFO("FG_NHG member added for group %s, next-hop %s",
-                    fgNhg_entry->second.fg_nhg_name.c_str(), next_hop.to_string().c_str());
+                    fgNhg_entry->second.fg_nhg_name.c_str(), nhk.to_string().c_str());
         }
     }
     else if (op == DEL_COMMAND)
