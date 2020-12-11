@@ -84,16 +84,22 @@ typedef struct
 } BankMemberChanges;
 
 class FgNhgOrch : public Orch, public Observer
+typedef std::vector<string> NextHopIndexMap;
+
+class FgNhgOrch : public Orch
 {
 public:
     FgNhgPrefixes fgNhgPrefixes;
-    FgNhgOrch(DBConnector *db, DBConnector *appDb, DBConnector *stateDb, vector<string> &tableNames, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch);
+    FgNhgOrch(DBConnector *db, DBConnector *appDb, DBConnector *stateDb, vector<table_name_with_pri_t> &tableNames, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch);
 
     void update(SubjectType type, void *cntx);
     bool addRoute(sai_object_id_t, const IpPrefix&, const NextHopGroupKey&);
     bool removeRoute(sai_object_id_t, const IpPrefix&);
     bool validNextHopInNextHopGroup(const NextHopKey&);
     bool invalidNextHopInNextHopGroup(const NextHopKey&);
+
+    // warm reboot support
+    bool bake() override;
 
 private:
     NeighOrch *m_neighOrch;
@@ -105,6 +111,10 @@ private:
     ProducerStateTable m_routeTable;
     FgPrefixOpCache m_fgPrefixAddCache;
     FgPrefixOpCache m_fgPrefixDelCache;
+
+    // warm reboot support for recovery
+    // < ip_prefix, < ip_next_hop, HashBuckets>>
+    map<string, NextHopIndexMap> m_recoveryMap;
 
     bool setNewNhgMembers(FGNextHopGroupEntry &syncd_fg_route_entry, FgNhgEntry *fgNhgEntry,
                     std::vector<BankMemberChanges> &bank_member_changes, 
@@ -123,6 +133,7 @@ private:
                     std::map<NextHopKey,sai_object_id_t> &nhopgroup_members_set, const IpPrefix&);
     void calculateBankHashBucketStartIndices(FgNhgEntry *fgNhgEntry);
     void setStateDbRouteEntry(const IpPrefix&, uint32_t index, NextHopKey nextHop);
+    void removeStateDbRouteEntry(const std::string& name);
     bool writeHashBucketChange(FGNextHopGroupEntry *syncd_fg_route_entry, uint32_t index, sai_object_id_t nh_oid,
                     const IpPrefix &ipPrefix, NextHopKey nextHop);
     bool createFineGrainedNextHopGroup(FGNextHopGroupEntry &syncd_fg_route_entry, FgNhgEntry *fgNhgEntry,

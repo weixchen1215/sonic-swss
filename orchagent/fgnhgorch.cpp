@@ -6,6 +6,7 @@
 #include "swssnet.h"
 #include "crmorch.h"
 #include <array>
+#include <algorithm>
 
 #define LINK_DOWN    0
 #define LINK_UP      1
@@ -20,7 +21,7 @@ extern RouteOrch *gRouteOrch;
 extern CrmOrch *gCrmOrch;
 extern PortsOrch *gPortsOrch;
 
-FgNhgOrch::FgNhgOrch(DBConnector *db, DBConnector *appDb, DBConnector *stateDb, vector<string> &tableNames, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch) :
+FgNhgOrch::FgNhgOrch(DBConnector *db, DBConnector *appDb, DBConnector *stateDb, vector<table_name_with_pri_t> &tableNames, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch) :
         Orch(db, tableNames),
         m_neighOrch(neighOrch),
         m_intfsOrch(intfsOrch),
@@ -105,6 +106,39 @@ void FgNhgOrch::update(SubjectType type, void *cntx)
     }
 }
 
+bool FgNhgOrch::bake()
+{
+    SWSS_LOG_ENTER();
+
+    deque<KeyOpFieldsValuesTuple> entries;
+    vector<string> keys;
+    m_stateWarmRestartRouteTable.getKeys(keys);
+
+    SWSS_LOG_NOTICE("Warm reboot: recovering entry %lu from state", keys.size());
+
+    for (const auto &key : keys)
+    {
+        vector<FieldValueTuple> tuples;
+        m_stateWarmRestartRouteTable.get(key, tuples);
+
+        NextHopIndexMap nhop_index_map(tuples.size(), std::string());
+        for (const auto &tuple : tuples)
+        {
+            const auto index = stoi(fvField(tuple));
+            const auto nextHop = fvValue(tuple);
+
+            nhop_index_map[index] = nextHop;
+            SWSS_LOG_INFO("Storing next hop %s at index %d", nhop_index_map[index].c_str(), index);
+        }
+
+        // Recover nexthop with index relationship
+        m_recoveryMap[key] = nhop_index_map;
+
+        removeStateDbRouteEntry(key);
+    }
+
+    return Orch::bake();
+}
 
 /* calculateBankHashBucketStartIndices: generates the hash_bucket_indices for all banks
  * and stores it in fgNhgEntry for the group. 
@@ -189,6 +223,13 @@ void FgNhgOrch::setStateDbRouteEntry(const IpPrefix &ipPrefix, uint32_t index, N
         m_stateWarmRestartRouteTable.set(key, fvs);
     }
 
+}
+
+void FgNhgOrch::removeStateDbRouteEntry(const string& ipPrefix)
+{
+	SWSS_LOG_ENTER();
+
+	m_stateWarmRestartRouteTable.del(ipPrefix);
 }
 
 
@@ -881,6 +922,8 @@ bool FgNhgOrch::setNewNhgMembers(FGNextHopGroupEntry &syncd_fg_route_entry, FgNh
     SWSS_LOG_ENTER();
 
     sai_status_t status;
+    bool is_warm_reboot = false;
+    auto nexthopsMap = m_recoveryMap.find(ipPrefix.to_string());
     for (uint32_t i = 0; i < fgNhgEntry->hash_bucket_indices.size(); i++) 
     {
         uint32_t bank = i;
@@ -913,11 +956,33 @@ bool FgNhgOrch::setNewNhgMembers(FGNextHopGroupEntry &syncd_fg_route_entry, FgNh
             return false;
         }
 
+        // recover state before warm reboot
+        if (nexthopsMap != m_recoveryMap.end())
+        {
+            is_warm_reboot = true;
+        }
+
+        SWSS_LOG_INFO("Warm reboot is set to %d", is_warm_reboot);
+
         for (uint32_t j = fgNhgEntry->hash_bucket_indices[i].start_index;
                 j <= fgNhgEntry->hash_bucket_indices[i].end_index; j++)
         {
-            NextHopKey bank_nh_memb = bank_member_changes[bank].nhs_to_add[j % 
-                bank_member_changes[bank].nhs_to_add.size()];
+            NextHopKey bank_nh_memb;
+            if (is_warm_reboot)
+            {
+                bank_nh_memb = nexthopsMap->second[j];
+                SWSS_LOG_INFO("Recovering nexthop %s with bucket %d", bank_nh_memb.ip_address.to_string().c_str(), j);
+                // case nhps in bank are all down
+                if (fgNhgEntry->next_hops[bank_nh_memb.ip_address] != i)
+                {
+                    syncd_fg_route_entry.inactive_to_active_map[i] = fgNhgEntry->next_hops[bank_nh_memb.ip_address];
+                }
+            }
+            else
+            {
+                bank_nh_memb = bank_member_changes[bank].nhs_to_add[j %
+                    bank_member_changes[bank].nhs_to_add.size()];
+            }
 
             // Create a next hop group member
             sai_attribute_t nhgm_attr;
@@ -959,6 +1024,11 @@ bool FgNhgOrch::setNewNhgMembers(FGNextHopGroupEntry &syncd_fg_route_entry, FgNh
             syncd_fg_route_entry.nhopgroup_members.push_back(next_hop_group_member_id);
             gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP_MEMBER);
         }
+    }
+
+    if (is_warm_reboot)
+    {
+        m_recoveryMap.erase(nexthopsMap);
     }
 
     return true;
