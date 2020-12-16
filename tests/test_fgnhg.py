@@ -197,7 +197,6 @@ def run_warm_reboot(dvs):
 
     # Stop swss before modifing the configDB
     dvs.stop_swss()
-    time.sleep(1)
 
     # start to apply new port_config.ini
     dvs.start_swss()
@@ -206,7 +205,6 @@ def run_warm_reboot(dvs):
 
     # Enabling some extra logging for validating the order of orchagent
     dvs.runcmd("swssloglevel -l INFO -c orchagent")
-    time.sleep(5)
 
 def verify_programmed_fg_state_db_entry(state_db,nh_memb_exp_count):
     memb_dict = nh_memb_exp_count

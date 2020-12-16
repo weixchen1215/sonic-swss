@@ -134,7 +134,6 @@ private:
                     std::map<NextHopKey,sai_object_id_t> &nhopgroup_members_set, const IpPrefix&);
     void calculateBankHashBucketStartIndices(FgNhgEntry *fgNhgEntry);
     void setStateDbRouteEntry(const IpPrefix&, uint32_t index, NextHopKey nextHop);
-    void removeStateDbRouteEntry(const std::string& name);
     bool writeHashBucketChange(FGNextHopGroupEntry *syncd_fg_route_entry, uint32_t index, sai_object_id_t nh_oid,
                     const IpPrefix &ipPrefix, NextHopKey nextHop);
     bool createFineGrainedNextHopGroup(FGNextHopGroupEntry &syncd_fg_route_entry, FgNhgEntry *fgNhgEntry,

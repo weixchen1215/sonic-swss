@@ -134,7 +134,7 @@ bool FgNhgOrch::bake()
         // Recover nexthop with index relationship
         m_recoveryMap[key] = nhop_index_map;
 
-        removeStateDbRouteEntry(key);
+        m_stateWarmRestartRouteTable.del(key);
     }
 
     return Orch::bake();
@@ -224,14 +224,6 @@ void FgNhgOrch::setStateDbRouteEntry(const IpPrefix &ipPrefix, uint32_t index, N
     }
 
 }
-
-void FgNhgOrch::removeStateDbRouteEntry(const string& ipPrefix)
-{
-	SWSS_LOG_ENTER();
-
-	m_stateWarmRestartRouteTable.del(ipPrefix);
-}
-
 
 bool FgNhgOrch::writeHashBucketChange(FGNextHopGroupEntry *syncd_fg_route_entry, uint32_t index, sai_object_id_t nh_oid,
         const IpPrefix &ipPrefix, NextHopKey nextHop)
