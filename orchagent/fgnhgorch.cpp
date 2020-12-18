@@ -914,7 +914,7 @@ bool FgNhgOrch::setNewNhgMembers(FGNextHopGroupEntry &syncd_fg_route_entry, FgNh
     SWSS_LOG_ENTER();
 
     sai_status_t status;
-    bool is_warm_reboot = false;
+    bool isWarmReboot = false;
     auto nexthopsMap = m_recoveryMap.find(ipPrefix.to_string());
     for (uint32_t i = 0; i < fgNhgEntry->hash_bucket_indices.size(); i++) 
     {
@@ -951,16 +951,16 @@ bool FgNhgOrch::setNewNhgMembers(FGNextHopGroupEntry &syncd_fg_route_entry, FgNh
         // recover state before warm reboot
         if (nexthopsMap != m_recoveryMap.end())
         {
-            is_warm_reboot = true;
+            isWarmReboot = true;
         }
 
-        SWSS_LOG_INFO("Warm reboot is set to %d", is_warm_reboot);
+        SWSS_LOG_INFO("Warm reboot is set to %d", isWarmReboot);
 
         for (uint32_t j = fgNhgEntry->hash_bucket_indices[i].start_index;
                 j <= fgNhgEntry->hash_bucket_indices[i].end_index; j++)
         {
             NextHopKey bank_nh_memb;
-            if (is_warm_reboot)
+            if (isWarmReboot)
             {
                 bank_nh_memb = nexthopsMap->second[j];
                 SWSS_LOG_INFO("Recovering nexthop %s with bucket %d", bank_nh_memb.ip_address.to_string().c_str(), j);
@@ -1018,7 +1018,7 @@ bool FgNhgOrch::setNewNhgMembers(FGNextHopGroupEntry &syncd_fg_route_entry, FgNh
         }
     }
 
-    if (is_warm_reboot)
+    if (isWarmReboot)
     {
         m_recoveryMap.erase(nexthopsMap);
     }
