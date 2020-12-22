@@ -965,9 +965,9 @@ bool FgNhgOrch::setNewNhgMembers(FGNextHopGroupEntry &syncd_fg_route_entry, FgNh
                 bank_nh_memb = nexthopsMap->second[j];
                 SWSS_LOG_INFO("Recovering nexthop %s with bucket %d", bank_nh_memb.ip_address.to_string().c_str(), j);
                 // case nhps in bank are all down
-                if (fgNhgEntry->next_hops[bank_nh_memb.ip_address] != i)
+                if (fgNhgEntry->next_hops[bank_nh_memb.ip_address].bank != i)
                 {
-                    syncd_fg_route_entry.inactive_to_active_map[i] = fgNhgEntry->next_hops[bank_nh_memb.ip_address];
+                    syncd_fg_route_entry.inactive_to_active_map[i] = fgNhgEntry->next_hops[bank_nh_memb.ip_address].bank;
                 }
             }
             else

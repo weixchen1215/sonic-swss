@@ -83,11 +83,10 @@ typedef struct
     std::vector<NextHopKey> active_nhs;
 } BankMemberChanges;
 
-class FgNhgOrch : public Orch, public Observer
 typedef std::vector<string> NextHopIndexMap;
 typedef map<string, NextHopIndexMap> WarmBootRecoveryMap;
 
-class FgNhgOrch : public Orch
+class FgNhgOrch : public Orch, public Observer
 {
 public:
     FgNhgPrefixes fgNhgPrefixes;
